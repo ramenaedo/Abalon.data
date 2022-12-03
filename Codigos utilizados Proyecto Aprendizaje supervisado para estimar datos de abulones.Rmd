@@ -1,0 +1,457 @@
+---
+title: "Proyecto MAT281 Grupo 6"
+output: html_notebook
+---
+```{r}
+#Cargaremos las librerias
+library(tidyverse)
+library(tidytext)
+library(dplyr)
+library(tm)
+library(caret)
+library(car)
+library(ggplot2)
+library(class)
+library(RColorBrewer)
+library(caTools)
+library(pROC)
+library(rpart)
+library(rpart.plot)
+library(kknn)
+library(kableExtra)
+```
+Los datos se encuentran almacenados dentro de un archivo en github, para que sea mas facil la visualizacion de estos mismos, asi se descargan los archivos mediante las siguientes lineas de codigos:
+
+```{r}
+download.file(url = "https://raw.githubusercontent.com/ramenaedo/Abalon.data/main/abalone.data", destfile = "abalon.data")
+abalon_data<-read_csv("abalon.data")
+```
+
+Luego, realizamos un cambio de variable a las letros que nos identifican el Sexo, siendo M=Masculine, F=Femenine y I=Infant. Donde se tiene que M=3, F=1 y I=2
+
+```{r}
+abalon_data$Sexo =as.factor(abalon_data$Sexo)
+abalon_data$Sexo =as.numeric(abalon_data$Sexo)
+```
+
+Comenzamos realizando un par de scatterplots para ver la forma en que se comporta nuestros datos, y posteriormente buscar una forma de trabajar con ellos.
+```{r}
+#Realizamos el primer scatterplots
+attach(abalon_data)
+names(abalon_data)
+grafica1=ggplot(abalon_data,aes(Longitud,Diametro,color=Anillos))
+grafica1+geom_point() + scale_color_gradient(low = "blue", high="red")
+```
+```{r}
+#Realizamos 2do scatterplots
+grafica2=ggplot(abalon_data,aes(Diametro,PesoEntero,color=Anillos))
+grafica2+geom_point()+ scale_color_gradient(low = "blue", high="red")
+```
+```{r}
+#Realizamos 3er scatterplots
+grafica3=ggplot(abalon_data,aes(Longitud,PesoConcha,color=Anillos))
+grafica3+geom_point()+ scale_color_gradient(low = "blue", high="red")
+```
+```{r}
+#Realizamos 4to scatterplots
+grafica4=ggplot(abalon_data,aes(PesoConcha,Diametro,color=Anillos))
+grafica4+geom_point()+ scale_color_gradient(low = "blue", high="red")
+```
+```{r}
+#Realizamos 5to scatterlplot
+grafica5=ggplot(abalon_data,aes(Sexo,Anillos,color=Anillos))
+grafica5+geom_point()+ scale_color_gradient(low = "blue", high="red")
+```
+```{r}
+grafica6=ggplot(abalon_data,aes(Longitud,PesoDesbullado,color=Anillos))
+grafica6+geom_point()+ scale_color_gradient(low = "blue", high="red")
+```
+```{r}
+grafica7=ggplot(abalon_data,aes(Longitud,PesoVisceras,color=Anillos))
+grafica7+geom_point()+ scale_color_gradient(low = "blue", high="red")
+```
+
+
+Nos interesa ver la forma en la que se encuentran distribuidos nuestros datos por lo tanto la cantidad de datos que hay respecto a cada anillo
+```{r}
+#Veamos la cantidad de muestras respecto a la cantidad de anillos
+table(abalon_data$Anillos)
+```
+
+Dada la forma en la que se dividen los datos, creemos que una de las formas mas factibles para distribuir nuestros datos es dividiendolos en aquellos que tienen mas de 11 anillos y aquellos que tienen menos de 11 anillos, estos pues desde esta cantidad de anillos se puede hablar de que el Abulon es adulto, se divide de esta forma pues creemos que se busca saber su edad por temas principalmente economicos, como se explica en el informe.
+```{r}
+abalon_data$Clasificacion<-recode(abalon_data$Anillos, "1:10=0 ; 11:29=1")
+abalon_data$Clasificacion <- factor(abalon_data$Clasificacion, levels = c("0", "1"), labels = c("Jovenes", "Adulto"))
+#Se ve mas bonito lo anterior 
+```
+
+```{r}
+#Veamos la cantidad de muestras respecto a la cantidad de anillos
+table(abalon_data$Clasificacion)
+```
+
+```{r}
+attach(abalon_data)
+names(abalon_data)
+grafica1=ggplot(abalon_data,aes(Longitud,Diametro,color=Clasificacion))
+grafica1+geom_point()
+```
+```{r}
+#Realizamos 2do scatterplots
+grafica2=ggplot(abalon_data,aes(Diametro,PesoEntero,color=Clasificacion))
+grafica2+geom_point()
+```
+```{r}
+#Realizamos 3er scatterplots
+grafica3=ggplot(abalon_data,aes(Longitud,PesoConcha,color=Clasificacion))
+grafica3+geom_point()
+```
+```{r}
+#Realizamos 4to scatterplots
+grafica4=ggplot(abalon_data,aes(PesoConcha,Diametro,color=Clasificacion))
+grafica4+geom_point()
+```
+```{r}
+#Realizamos 5to scatterlplot
+grafica5=ggplot(abalon_data,aes(Sexo,Anillos,color=Clasificacion))
+grafica5+geom_point()
+```
+```{r}
+grafica6=ggplot(abalon_data,aes(Longitud,PesoDesbullado,color=Clasificacion))
+grafica6+geom_point()
+```
+```{r}
+grafica7=ggplot(abalon_data,aes(Longitud,PesoVisceras,color=Clasificacion))
+grafica7+geom_point()
+```
+Es claro notar que nuestros datos estan muchos mas representados que como estaban antes.
+
+Una de las principales aplicaciones de la regresión logística es la de clasificación binaria, en el que las observaciones se clasifican en un grupo u otro dependiendo del valor que tome la variable empleada como predictor.
+Para  nuestro caso, ajustaremos un modelo logistico a nuestras covariable, para luego ver cual covariable sobrevive a traves del test de Wald.
+
+```{r}
+attach(abalon_data)
+modelo<-glm(Clasificacion ~ Sexo+Longitud+Diametro+Altura+PesoEntero+PesoDesbullado+PesoConcha+PesoVisceras, family = binomial(link = "logit"))
+summary(modelo)
+```
+Podemos sacar el Sexo
+```{r}
+attach(abalon_data)
+modelo<-glm(Clasificacion ~ Longitud+Diametro+Altura+PesoEntero+PesoDesbullado+PesoConcha+PesoVisceras, family = binomial(link = "logit"))
+summary(modelo)
+```
+Podemos sacar la ALTURA
+```{r}
+attach(abalon_data)
+modelo<-glm(Clasificacion ~ Longitud+Diametro+PesoEntero+PesoDesbullado+PesoConcha+PesoVisceras, family = binomial(link = "logit"))
+summary(modelo)
+```
+No podemos seguir quitando covariables
+Veamos Boxplot, para ver si es posible encontrar diferencias entre los datos y asi disminuir la cantidad de covariables a utilizar con alguna razon
+```{r}
+ggplot(data = abalon_data, aes(x=Clasificacion, y=PesoEntero, group=Clasificacion, color=Clasificacion)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(width = 0.1) +
+  theme_bw() +
+  theme(legend.position = "null")
+```
+```{r}
+ggplot(data = abalon_data, aes(x=Clasificacion, y=PesoDesbullado, group=Clasificacion, color=Clasificacion)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(width = 0.1) +
+  theme_bw() +
+  theme(legend.position = "null")
+```
+```{r}
+ggplot(data = abalon_data, aes(x=Clasificacion, y=PesoConcha, group=Clasificacion, color=Clasificacion)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(width = 0.1) +
+  theme_bw() +
+  theme(legend.position = "null")
+```
+```{r}
+ggplot(data = abalon_data, aes(x=Clasificacion, y=PesoVisceras, group=Clasificacion, color=Clasificacion)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(width = 0.1) +
+  theme_bw() +
+  theme(legend.position = "null")
+```
+```{r}
+ggplot(data = abalon_data, aes(x=Clasificacion, y=Diametro, group=Clasificacion, color=Clasificacion)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(width = 0.1) +
+  theme_bw() +
+  theme(legend.position = "null")
+```
+```{r}
+ggplot(data = abalon_data, aes(x=Clasificacion, y=Altura, group=Clasificacion, color=Clasificacion)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(width = 0.1) +
+  theme_bw() +
+  theme(legend.position = "null")
+```
+```{r}
+ggplot(data = abalon_data, aes(x=Clasificacion, y=Longitud, group=Clasificacion, color=Clasificacion)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(width = 0.1) +
+  theme_bw() +
+  theme(legend.position = "null")
+```
+```{r}
+ggplot(data = abalon_data, aes(x=Clasificacion, y=Sexo, group=Clasificacion, color=Clasificacion)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(width = 0.1) +
+  theme_bw() +
+  theme(legend.position = "null")
+```
+Como podemos notar no podemos quitar ninguna covariable para los otros metodos con algun sentido.
+
+Ahora, realizaremos una validacion cruzada de nuestros datos, empezamos preparando los datos.
+```{r}
+set.seed(1234)
+split <- sample.split(abalon_data$Clasificacion, SplitRatio = 0.80)
+training_set <- subset(abalon_data, split == TRUE)
+test_set <- subset(abalon_data, split == FALSE)
+print("Datos de entrenamiento")
+table(training_set$Clasificacion)
+print("Datos de testeo")
+table(test_set$Clasificacion)
+#Son proporcionales
+```
+Para ahora comenzar con la validacion cruzada de lleno
+```{r}
+#Validacion Cruzada
+folds <- createFolds(training_set$Clasificacion, k = 10)
+# Regresion Logistica
+cvRegresionLogistica <- lapply(folds, function(x){
+  training_fold <- training_set[-x, ]
+  test_fold <- test_set[x, ]
+  clasificador <- glm(Clasificacion ~ Longitud+Diametro+PesoEntero+PesoDesbullado+PesoConcha+PesoVisceras, family = binomial, data = training_fold)
+  y_pred <- predict(clasificador, type = 'response', newdata = test_fold)
+  y_pred <- ifelse(y_pred > 0.5, 1, 0)
+  y_pred <- factor(y_pred, levels = c("0", "1"), labels = c("Adulto", "Infante"))
+  cm <- table(test_fold$Clasificacion, y_pred)
+  precision <- (cm[1,1] + cm[2,2]) / (cm[1,1] + cm[2,2] +cm[1,2] + cm[2,1])
+  return(precision)
+})
+precisionRegresionLogistica <- mean(as.numeric(cvRegresionLogistica))
+print("Precision de la Validacion cruzada")
+precisionRegresionLogistica
+```
+Realizamos ahora una curva de ROC
+```{r}
+#CurvaROCValidacion
+aucs = c()
+for (kk in 1:100)
+{
+  train_index <- createDataPartition(abalon_data$Clasificacion, p = 0.8, list = FALSE, times = 1)
+  train = abalon_data[train_index,]
+  test = abalon_data[-train_index,]
+  model<-glm(Clasificacion ~Longitud+Diametro+PesoEntero+PesoDesbullado+PesoConcha+PesoVisceras, family = binomial(link = "logit"),data=train)
+  prob <- predict(model, type='response', newdata=test)
+  roc <- roc( test $ Clasificacion ~ prob , plot = FALSE, print.auc = FALSE )
+  aucs[kk]<-cbind(roc$auc)
+}
+plot( x = 1:100, y = aucs,  main = "Valor AUC para 100 iteraciones", xlab = "Iteración", ylab = "Valor AUC", col = "black", type = "p", pch = 1, xlim = c(0,100), ylim = c(0,1))
+```
+Donde se tiene el siguiente promedio en cuanto al area bajo las curvas ROC
+```{r}
+print(mean(aucs))
+```
+Obteniendo una curva ROC similar a 
+```{r}
+#Curva ROC representativa
+attach(training_set)
+modelo1<-glm(Clasificacion ~ Longitud+Diametro+PesoEntero+PesoDesbullado+PesoConcha+PesoVisceras, family = binomial(link = "logit"))
+p=predict(modelo1, newdata =test_set, type='response')
+roc=roc(test_set$Clasificacion~p,plot=TRUE, print.auc=TRUE)
+```
+
+Ahora veremos el arbol binario arrojado
+```{r}
+abalon_data$Clasificacion<-as.factor(abalon_data$Clasificacion)
+attach(abalon_data)
+modelo<-rpart(Clasificacion~Sexo+Longitud+Altura+Diametro+PesoEntero+PesoDesbullado+PesoVisceras+PesoConcha,data=abalon_data)
+rpart.plot(modelo) 
+```
+En donde al igual que lo hecho con anterioridad, realizaremos una validacion cruzada con los datos que ya preparamos
+```{r}
+
+#CV Decision Tree
+cvDecisionTree <- lapply(folds, function(x){
+  training_fold <- training_set[-x, ]
+  test_fold <- test_set[x, ]
+  clasificador <- rpart(Clasificacion ~ Sexo+Diametro+Longitud+Altura+PesoEntero+PesoDesbullado+PesoVisceras+PesoConcha, data = training_fold)
+  y_pred <- predict(clasificador, newdata = test_fold, type = 'class')
+  cm <- table(test_fold$Clasificacion, y_pred)
+  precision <- (cm[1,1] + cm[2,2]) / (cm[1,1] + cm[2,2] +cm[1,2] + cm[2,1])
+  return(precision)
+})
+precisionDecisionTree <- mean(as.numeric(cvDecisionTree))
+print("Precision de la Validacion cruzada")
+precisionDecisionTree
+```
+
+Ahora realizamos multiples curvas ROC a nuestros datos
+```{r}
+aucs = c()
+for (kk in 1:100)
+{
+  train_index <- createDataPartition(abalon_data$Clasificacion, p = 0.8, list = FALSE, times = 1)
+  train = abalon_data[train_index,]
+  test = abalon_data[-train_index,]
+  model <- rpart(Clasificacion ~ Sexo+Diametro+Longitud+Altura+PesoEntero+PesoDesbullado+PesoVisceras+PesoConcha, data = train)
+  prob <- predict(model, newdata = test, type = 'vector')
+  roc <- roc( test $ Clasificacion ~ prob , plot = FALSE, print.auc = FALSE )
+  aucs[kk]<-cbind(roc$auc)
+}
+plot( x = 1:100, y = aucs,  main = "Valor AUC para 100 Iteraciones", xlab = "iteración", ylab = "Valor AUC", col = "black", type = "p", pch = 1, xlim = c(0,100), ylim = c(0,1))
+```
+
+Obtneiendo el siguiente promedio
+```{r}
+print(mean(aucs))
+```
+
+En donde se tiene una curva ROC similar a 
+```{r}
+#Curva ROC represetativa
+attach(training_set)
+modelo1<-rpart(Clasificacion~Sexo+Diametro+Longitud+Altura+PesoEntero+PesoDesbullado+PesoVisceras+PesoConcha,data=training_set)
+p1=predict(modelo1, newdata =test_set, type='vector')
+roc=roc(test_set$Clasificacion~p1,plot=TRUE, print.auc=TRUE)
+```
+
+```{r}
+download.file(url = "https://raw.githubusercontent.com/ramenaedo/Abalon.data/main/abalone.data", destfile = "abalon.data")
+datos<-read_csv("abalon.data")
+#path = "D:/Documentos/2022-2/Aplica/Proyecto Final/abalone.data"
+#datos = read.table(file = path, header = FALSE, sep = ",")
+colnames(datos) <- c("Sex","Lenght","Diameter","Height","Whole weight","Shucked weight","Viscera weight","Shell weight","Rings")
+datos$Rings <- as.factor(datos$Rings)
+attach(datos)
+View(datos)
+datos <- data.frame(datos)
+summary(Rings);summary(datos)
+datos
+
+```
+
+```{r}
+Male <- ifelse(Sex == "M", 1, 0)
+Female <- ifelse(Sex == "F", 1, 0)
+Infant <- ifelse(Sex == "I", 1, 0)
+datos <- datos[,-c(1)]
+datos <- cbind(Male,Female,Infant,datos[,])
+datos
+```
+#Analizaremos primero la precisión de KNN para la variable respuesta sin modificar
+```{r}
+conjuntos <- createFolds(Rings, k = 10)
+K = c()
+for (kk in 1:30)
+  {
+  vcknn <- lapply(conjuntos,function(x)
+  {
+   conjunto_entrenamiento <- data.frame(datos[-x,])
+   conjunto_prueba <- data.frame(datos[x,])
+   prediccion <- knn(train = conjunto_entrenamiento[,-11], 
+                     test = conjunto_prueba[,-11], 
+                     cl = conjunto_entrenamiento[,11], 
+                     k = kk)
+   tabla_confusion <- table(conjunto_prueba[,11], prediccion)
+   return(sum(diag(tabla_confusion))/sum(tabla_confusion))
+  })
+  K[kk] = mean(as.numeric(vcknn))
+}
+order(K,decreasing = TRUE)[1:10]
+print(K[order(K,decreasing = TRUE)[1:10]])
+plot( x = 1:30, y = K,  main = "Precisión k vecinos cercanos", xlab = "k", ylab = "Precisión", col = "blue", type = "l", pch = 4, xlim = c(0,30), ylim = c(0,1))
+
+```
+#Se observa que deja mucho que desear los resultados obtenidos
+
+
+#Ahora definamos una nueva variable de decisión como joven(<=11)/viejo(>11)
+```{r}
+datosbin <- datos
+datosbin$Rings <- as.numeric(datosbin$Rings)
+datosbin$Rings <- ifelse(datosbin$Rings < 11, 0, 1)
+datosbin$Rings <- as.factor(datosbin$Rings)
+attach(datosbin)
+datosbin
+```
+
+#Veamos como se comporta datosbin con knn, si quiere correrlo mas rapido cambie el k max (300) por algo mucho menor
+(Dentro del codigo se usa 100 para saber como se ve, sin embargo se utilizo 300)
+```{r}
+
+conjuntos <- createFolds(datosbin$Rings, k = 10)
+K = c()
+
+for (kk in 1:100)
+  {
+  vcknn <- lapply(conjuntos,function(x)
+  {
+   conjunto_entrenamiento <- data.frame(datosbin[-x,])
+   conjunto_prueba <- data.frame(datosbin[x,])
+   prediccion <- knn(train = conjunto_entrenamiento[,-11], 
+                     test = conjunto_prueba[,-11], 
+                     cl = conjunto_entrenamiento[,11], 
+                     k = kk)
+   tabla_confusion <- table(conjunto_prueba[,11], prediccion)
+   return(sum(diag(tabla_confusion))/sum(tabla_confusion))
+  })
+  K[kk] = mean(as.numeric(vcknn))
+}
+order(K,decreasing = TRUE)[1:30]
+print(K[order(K,decreasing = TRUE)[1:30]])
+plot( x = 1:100, y = K,  main = "Precisión k vecinos cercanos", xlab = "k", ylab = "Precisión", col = "blue", type = "l", pch = 4, xlim = c(0,100), ylim = c(0,1))
+```
+
+#Otra forma de ver k-fold cross validation con la libreria caret
+```{r}
+
+trControl <- trainControl(method  = "cv",
+                          number  = 5)
+fit <- train(Rings ~ .,
+             method     = "knn",
+             tuneGrid   = expand.grid(k = 1:10),
+             trControl  = trControl,
+             metric     = "Accuracy",
+             data       = datosbin)
+fit
+
+```
+
+
+#Ahora veamos la curva Roc y el AUC de KNN para datosbin
+```{r}
+train_index <- createDataPartition(datosbin$Rings, p = 0.8, list = FALSE, times = 1)
+train = datosbin[train_index,]
+test = datosbin[-train_index,]
+modelo <- class::knn(train[,-11], test[,-11], cl = train[,11], k=13, prob=TRUE)
+prob <- attr(modelo, "prob")
+roc <- roc( test $ Rings ~ prob , plot = TRUE, print.auc = TRUE )
+print(roc$auc)
+
+```
+
+```{r}
+
+aucs = c()
+
+for (kk in 1:100)
+{
+  train_index <- createDataPartition(datosbin$Rings, p = 0.8, list = FALSE, times = 1)
+  train = datosbin[train_index,]
+  test = datosbin[-train_index,]
+  modelo <- class::knn(train[,-11], test[,-11], cl = train[,11], k=13, prob=TRUE)
+  prob <- attr(modelo, "prob")
+  roc <- roc( test $ Rings ~ prob , plot = FALSE, print.auc = FALSE )
+  aucs[kk] = roc$auc
+}
+plot( x = 1:100, y = aucs,  main = "Valor auc para 100 iteraciones", xlab = "iteración", ylab = "Valor auc", col = "black", type = "p", pch = 1, xlim = c(0,100), ylim = c(0,1))
+print(mean(aucs))
+```
+#Se observa que es KNN es un clasificador que obtiene resultados regulares para el conjunto datosbin, pues AUC < 0.75 y > 0.6
